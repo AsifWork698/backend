@@ -1,98 +1,103 @@
-const express = require('express')
+const express = require('express');
 const { MongoClient } = require('mongodb');
-const bodyparser = require('body-parser')
-const cors = require('cors')
+const bodyParser = require('body-parser');
+const cors = require('cors');
+const dotenv = require('dotenv');
 
-// or as an es module:
-// import { MongoClient } from 'mongodb'
+dotenv.config(); // Load environment variables from .env locally
 
-// Connection URL
-const url = 'mongodb://localhost:27017';
-const client = new MongoClient(url);
+const app = express();
+const port = process.env.PORT || 3000;
 
-// Database Name
+app.use(cors());
+app.use(bodyParser.json());
+
+// ===== MongoDB Setup =====
+const mongoURI = process.env.MONGO_URL; // Use Vercel env variable
+const client = new MongoClient(mongoURI);
 const dbName = 'passop';
 
+let db;
 
-const app = express()
-const port = 3000
-app.use(cors())
+// Connect once when server starts
+async function connectDB() {
+    try {
+        await client.connect();
+        db = client.db(dbName);
+        console.log('MongoDB connected');
+    } catch (err) {
+        console.error('MongoDB connection error:', err);
+    }
+}
 
-const dotenv = require('dotenv');
-app.use(bodyparser.json())
-dotenv.config()
+connectDB();
 
-client.connect();
+// ===== Routes =====
 
-//Get all the Passwords
+// Get all passwords
 app.get('/', async (req, res) => {
-    const db = client.db(dbName);
-    const collection = db.collection('passwords');
-    const findResult = await collection.find({}).toArray();
-    res.json(findResult)
-})
+    try {
+        const collection = db.collection('passwords');
+        const findResult = await collection.find({}).toArray();
+        res.json(findResult);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
 
-//Save a Password
+// Save a password
 app.post('/', async (req, res) => {
-    const password = req.body
-    const db = client.db(dbName);
-    const collection = db.collection('passwords');
-    const findResult = await collection.insertOne(password)
-    res.send({ success: true, result: findResult })
-})
+    try {
+        const password = req.body;
+        const collection = db.collection('passwords');
+        const result = await collection.insertOne(password);
+        res.json({ success: true, result });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
 
-//Delete a Password
+// Delete a password
 app.delete('/:id', async (req, res) => {
     try {
-        const db = client.db(dbName);
         const collection = db.collection('passwords');
         const result = await collection.deleteOne({ id: req.params.id });
         if (result.deletedCount === 1) {
             res.json({ success: true });
         } else {
-            res.status(404).json({ success: false, message: "Not found" });
+            res.status(404).json({ success: false, message: 'Not found' });
         }
     } catch (err) {
         console.error(err);
-        res.status(500).json({ success: false, message: "Server error" });
+        res.status(500).json({ success: false, message: 'Server error' });
     }
 });
 
-
-
-// Edit password
+// Edit a password
 app.put('/:id', async (req, res) => {
     try {
-        const db = client.db(dbName);
         const collection = db.collection('passwords');
-
-        console.log("---- EDIT REQUEST ----");
-        console.log("req.params.id:", req.params.id);
-        console.log("req.body:", req.body);
-
         const { id, ...updateData } = req.body;
 
         const result = await collection.updateOne(
-            { id: req.params.id },   // find by id
-            { $set: updateData }     // update everything except id
+            { id: req.params.id },
+            { $set: updateData }
         );
 
-        console.log("Mongo result:", result);
-
         if (result.matchedCount === 0) {
-            console.log("No document matched for id:", req.params.id);
-            return res.status(404).json({ success: false, message: "Password not found" });
+            return res.status(404).json({ success: false, message: 'Password not found' });
         }
 
         res.json({ success: true });
     } catch (err) {
-        console.error("❌ Error in PUT /:id:", err);
+        console.error(err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
 
-
-
+// ===== Start server =====
 app.listen(port, () => {
-    console.log(`Example app listening on port http://localhost:${port}`)
-})
+    console.log(`Server listening on port ${port}`);
+});
